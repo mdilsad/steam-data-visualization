@@ -5,7 +5,7 @@ from src.eda import render_eda
 from src.demir import render_demir
 
 st.set_page_config(
-    page_title="Steam Games Data Visualization",
+    page_title="Steam Games Data Analyis",
     page_icon="🎮",
     layout="wide"
 )
@@ -13,7 +13,7 @@ st.set_page_config(
 def main():
     df = load_data()
 
-    st.title("🎮 Steam Dataset Visual Analytics")
+    st.title("🎮 Steam Games Data Analysis")
 
     tab1, tab2, tab3, tab4 = st.tabs([
         "Mehmet",
