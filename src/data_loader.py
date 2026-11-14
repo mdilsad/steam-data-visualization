@@ -4,7 +4,7 @@ import streamlit as st
 
 DATA_PATH = "clean_steam.parquet"
 
-@st.cache_data(show_spinner="Veri seti yükleniyor...")
+@st.cache_data(show_spinner="Loading Steam dataset...")
 def load_data(filepath: str = DATA_PATH) -> pd.DataFrame:
     """Temizlenmiş Steam Parquet verisini okur ve Streamlit oturumunda önbelleğe alır."""
     if not os.path.exists(filepath):
