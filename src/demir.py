@@ -16,6 +16,11 @@ LINE_WIDTH_HOVER = 3.5
 LINE_OPACITY_DEFAULT = 0.65
 LINE_OPACITY_DIM = 0.12
 
+REVENUE_TOP_STUDIOS = 15
+REVENUE_TOP_GAMES_PER_STUDIO = 5
+BOXLEITER_MULTIPLIER = 30.0
+EFFECTIVE_PRICE_RATIO = 0.70
+
 
 # ==========================================
 # 1. TREEMAP FONKSİYONLARI
@@ -372,19 +377,188 @@ def render_parallel_coordinates(df: pd.DataFrame):
 
 
 # ==========================================
-# 3. SANKEY VE ANA ROUTER FONKSİYONLARI
+# 3. TOP DEVELOPERS & PUBLISHERS BY REVENUE
 # ==========================================
-def render_sankey(df: pd.DataFrame):
-    pass
+def prepare_revenue_data(
+    df: pd.DataFrame,
+    entity_col: str = "developer",
+    top_studios: int = REVENUE_TOP_STUDIOS,
+    top_games_per_studio: int = REVENUE_TOP_GAMES_PER_STUDIO,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Boxleiter yöntemiyle (total * 30 * price * 0.70) en çok gelir elde eden ilk N stüdyoyu hazırlar."""
+    cols = ["app_id", "name", entity_col, "price", "total", "positive_ratio"]
+    work_df = df[cols].dropna(subset=["name", entity_col, "price", "total"]).copy()
+
+    work_df[entity_col] = work_df[entity_col].astype(str).str.strip()
+    work_df = work_df[
+        (work_df[entity_col] != "")
+        & (work_df[entity_col].str.lower() != "unknown")
+        & (work_df["price"] > 0)
+        & (work_df["price"] <= PARCOORDS_MAX_PRICE)
+        & (work_df["total"] > 0)
+    ].copy()
+
+    # Boxleiter Gelir Modeli: Tahmini Satış (total * 30) * İndirimli/Bölgesel Ortalama Fiyat (price * 0.70)
+    work_df["est_units"] = work_df["total"] * BOXLEITER_MULTIPLIER
+    work_df["est_revenue"] = work_df["est_units"] * (work_df["price"] * EFFECTIVE_PRICE_RATIO)
+
+    studio_totals = (
+        work_df.groupby(entity_col)["est_revenue"]
+        .sum()
+        .nlargest(top_studios)
+    )
+    ordered_studios = studio_totals.index.tolist()[::-1]
+
+    rows = []
+    for studio in ordered_studios:
+        studio_df = work_df[work_df[entity_col] == studio].sort_values(
+            by="est_revenue", ascending=False
+        )
+        total_studio_rev = float(studio_df["est_revenue"].sum())
+        top_df = studio_df.head(top_games_per_studio)
+        rest_df = studio_df.iloc[top_games_per_studio:]
+
+        for _, r in top_df.iterrows():
+            rev = float(r["est_revenue"])
+            rows.append(
+                {
+                    "studio": studio,
+                    "game_label": str(r["name"]),
+                    "est_revenue": rev,
+                    "share_pct": (rev / total_studio_rev) * 100.0,
+                    "price": float(r["price"]),
+                    "est_units": int(r["est_units"]),
+                    "total_reviews": int(r["total"]),
+                    "positive_ratio": float(r["positive_ratio"]) if pd.notna(r["positive_ratio"]) else 0.0,
+                }
+            )
+
+        if not rest_df.empty:
+            rest_rev = float(rest_df["est_revenue"].sum())
+            rows.append(
+                {
+                    "studio": studio,
+                    "game_label": f"Other Games ({len(rest_df)} titles)",
+                    "est_revenue": rest_rev,
+                    "share_pct": (rest_rev / total_studio_rev) * 100.0,
+                    "price": float(rest_df["price"].mean()),
+                    "est_units": int(rest_df["est_units"].sum()),
+                    "total_reviews": int(rest_df["total"].sum()),
+                    "positive_ratio": float(rest_df["positive_ratio"].mean()) if rest_df["positive_ratio"].notna().any() else 0.0,
+                }
+            )
+
+    return pd.DataFrame(rows), ordered_studios
 
 
+def render_revenue_breakdown(df: pd.DataFrame):
+    st.subheader("Top Studios by Estimated Gross Revenue")
+    st.markdown(
+        f"Top **{REVENUE_TOP_STUDIOS}** studios ranked by estimated paid-game gross revenue. "
+        f"Each bar shows the studio's **top {REVENUE_TOP_GAMES_PER_STUDIO} highest-earning games**, colored by **Store Price (€)**."
+    )
+
+    entity_choice = st.radio(
+        "Group by:",
+        options=["Developer", "Publisher"],
+        horizontal=True,
+        key="demir_revenue_entity",
+    )
+    entity_col = "developer" if entity_choice == "Developer" else "publisher"
+
+    rev_df, ordered_studios = prepare_revenue_data(df, entity_col=entity_col)
+    if rev_df.empty:
+        st.warning("No revenue data available.")
+        return
+
+    fig = go.Figure()
+
+    for _, row in rev_df.iterrows():
+        norm_price = float(np.clip(row["price"] / PARCOORDS_MAX_PRICE, 0.0, 1.0))
+        bar_color = px.colors.sample_colorscale("Plasma", [norm_price])[0]
+        rev_millions = row["est_revenue"] / 1e6
+
+        hover_text = (
+            f"<b>{row['game_label']}</b><br>"
+            f"{entity_choice}: {row['studio']}<br>"
+            f"Estimated Gross Revenue: €{rev_millions:,.1f}M ({row['share_pct']:.1f}% of studio)<br>"
+            f"Store Price: €{row['price']:.2f}<br>"
+            f"Estimated Units Sold: {row['est_units']:,}<br>"
+            f"Total Reviews: {row['total_reviews']:,}<br>"
+            f"Positive Review Ratio: {row['positive_ratio']:.1f}%<extra></extra>"
+        )
+
+        short_name = row["game_label"] if len(row["game_label"]) <= 22 else row["game_label"][:20] + "…"
+        inside_text = short_name if row["est_revenue"] >= 120_000_000 else ""
+
+        fig.add_trace(
+            go.Bar(
+                x=[row["est_revenue"]],
+                y=[row["studio"]],
+                orientation="h",
+                marker=dict(
+                    color=bar_color,
+                    line=dict(color="rgba(15, 23, 42, 0.9)", width=1.4),
+                ),
+                text=[inside_text],
+                textposition="inside",
+                insidetextanchor="middle",
+                textfont=dict(color="#ffffff", size=11),
+                hovertemplate=hover_text,
+                showlegend=False,
+            )
+        )
+
+    # Sağdaki Oyun Fiyatı (€) Renk Skalası (Colorbar)
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker=dict(
+                colorscale="Plasma",
+                cmin=0,
+                cmax=PARCOORDS_MAX_PRICE,
+                color=[0, PARCOORDS_MAX_PRICE],
+                showscale=True,
+                colorbar=dict(title="Price (€)", tickprefix="€"),
+            ),
+            hoverinfo="none",
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        barmode="stack",
+        title=f"Top {REVENUE_TOP_STUDIOS} {entity_choice}s by Estimated Gross Revenue",
+        height=680,
+        margin=dict(t=60, l=20, r=40, b=40),
+        xaxis=dict(
+            title="Estimated Gross Revenue (€)",
+            tickprefix="€",
+            gridcolor="rgba(148, 163, 184, 0.15)",
+        ),
+        yaxis=dict(
+            title=entity_choice,
+            categoryorder="array",
+            categoryarray=ordered_studios,
+        ),
+        hoverlabel=dict(bgcolor="#1e293b", font_size=13, font_color="#f8fafc"),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# ==========================================
+# GİRİŞ
+# ==========================================
 def render_demir(df: pd.DataFrame):
     selected_viz = st.selectbox(
-        "Select Visualization:",
+        "Select a visualization:",
         options=[
             "Genre Hierarchy by Total Reviews",
+            "Top Studios by Estimated Gross Revenue",
             "Game Success Profile",
-            "Sankey Diagram (Pricing to Review Score Flow)",
         ],
         key="demir_viz_selector",
     )
@@ -393,7 +567,7 @@ def render_demir(df: pd.DataFrame):
 
     if selected_viz == "Genre Hierarchy by Total Reviews":
         render_treemap(df)
+    elif selected_viz == "Top Studios by Estimated Gross Revenue":
+        render_revenue_breakdown(df)
     elif selected_viz == "Game Success Profile":
         render_parallel_coordinates(df)
-    elif selected_viz == "Sankey Diagram (Pricing to Review Score Flow)":
-        render_sankey(df)
