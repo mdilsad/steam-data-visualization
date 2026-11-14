@@ -12,12 +12,12 @@ NETWORK_NODE_LIMIT = 45
 NETWORK_EDGE_LIMIT = 230
 
 
+@st.cache_data(show_spinner=False)
 def get_top_genre_counts(df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
     """DataFrame içindeki virgülle ayrılmış türleri ayrıştırır ve oyun sayılarını hesaplar."""
     if "genres" not in df.columns:
         raise ValueError("DataFrame içinde 'genres' sütunu bulunamadı.")
 
-    # Virgülle birleştirilmiş türleri satırlara patlat (explode) ve temizle
     exploded_genres = (
         df[["app_id", "genres"]]
         .dropna(subset=["genres"])
@@ -27,7 +27,6 @@ def get_top_genre_counts(df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
     exploded_genres["genre"] = exploded_genres["genre"].str.strip()
     exploded_genres = exploded_genres[exploded_genres["genre"] != ""]
 
-    # Mehmet'in orijinal mantığı: Tür başına benzersiz (nunique) oyun sayısı
     counts = (
         exploded_genres.groupby("genre", as_index=False)["app_id"]
         .nunique()
@@ -379,10 +378,11 @@ def _prepare_genre_tag_network(
     return pd.DataFrame(node_rows), pd.DataFrame(edge_rows)
 
 
+@st.cache_data(show_spinner=False)
 def get_genre_review_data(
     df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, dict[str, int]]:
-    """Expand valid unique games to one row per game and distinct genre."""
+    """Expand valid unique games from clean_steam.parquet to one row per game and genre."""
     required = {
         "app_id",
         "name",
@@ -403,32 +403,28 @@ def get_genre_review_data(
     ]
     if "positive_ratio" in df.columns:
         selected_columns.append("positive_ratio")
-    source = df[selected_columns].copy()
-    missing_app_id_rows = int(source["app_id"].isna().sum())
-    source = source.dropna(subset=["app_id"])
-    duplicate_rows = int(source.duplicated(subset=["app_id"]).sum())
-    games = source.drop_duplicates(subset=["app_id"], keep="first").copy()
 
-    raw_scores = games["review_score"]
-    score_text = raw_scores.astype("string").str.strip()
-    missing_score_mask = raw_scores.isna() | score_text.eq("")
-    numeric_scores = pd.to_numeric(raw_scores, errors="coerce")
+    source = df[selected_columns]
+    missing_app_id_rows = int(source["app_id"].isna().sum())
+    duplicate_rows = int(source["app_id"].duplicated().sum())
+    games = source.dropna(subset=["app_id"]).drop_duplicates(subset=["app_id"], keep="first").copy()
+
+    # clean_steam.parquet içinde review_score zaten float64 tipindedir
+    numeric_scores = games["review_score"]
+    missing_score_mask = numeric_scores.isna()
     valid_score_mask = numeric_scores.between(0, 10, inclusive="both")
     invalid_score_mask = ~missing_score_mask & ~valid_score_mask
-    games["review_score"] = numeric_scores
 
-    missing_genre_games = sum(
-        not _split_comma_values(value) for value in games["genres"]
+    missing_genre_games = int(
+        games["genres"].isna().sum()
+        + (games["genres"].fillna("").str.strip() == "").sum()
     )
+
     valid_games = games.loc[valid_score_mask].copy()
-    valid_games["review_score_description"] = (
-        valid_games["review_score_description"].fillna("Unknown").astype(str)
-    )
-    valid_games["name"] = valid_games["name"].fillna("Unknown title").astype(str)
-    valid_games["genre"] = valid_games["genres"].fillna("").astype(str).str.split(",")
+    valid_games["genre"] = valid_games["genres"].fillna("").str.split(",")
     expanded = valid_games.explode("genre")
-    expanded["genre"] = expanded["genre"].astype("string").str.strip()
-    expanded = expanded.loc[expanded["genre"].notna() & expanded["genre"].ne("")]
+    expanded["genre"] = expanded["genre"].str.strip()
+    expanded = expanded.loc[expanded["genre"] != ""]
     expanded = expanded.drop_duplicates(subset=["app_id", "genre"])
 
     diagnostics = {
@@ -471,10 +467,9 @@ def create_genre_review_box_plot(
     color_column = None
     ratio_order = ["0–25%", "25–50%", "50–75%", "75–100%", "Unknown"]
     if color_by_positive_ratio and "positive_ratio" in filtered.columns:
-        ratio = pd.to_numeric(filtered["positive_ratio"], errors="coerce")
         filtered["positive_ratio_band"] = (
             pd.cut(
-                ratio,
+                filtered["positive_ratio"],
                 bins=[-0.01, 25, 50, 75, 100],
                 labels=ratio_order[:4],
                 include_lowest=True,
