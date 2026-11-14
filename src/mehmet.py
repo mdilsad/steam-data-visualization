@@ -8,12 +8,22 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
+from src.mehmet_ml import (
+    fit_genre_tag_node_clusters,
+    render_genre_distribution_analysis,
+    render_genre_distribution_random_forest,
+    render_genre_tag_node_cluster_results,
+    render_review_profile_analysis,
+    render_review_score_random_forest,
+    render_tag_prediction_analysis,
+)
+
 NETWORK_NODE_LIMIT = 45
 NETWORK_EDGE_LIMIT = 230
 
 
 @st.cache_data(show_spinner=False)
-def get_top_genre_counts(df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
+def get_genre_counts(df: pd.DataFrame) -> pd.DataFrame:
     """DataFrame içindeki virgülle ayrılmış türleri ayrıştırır ve oyun sayılarını hesaplar."""
     if "genres" not in df.columns:
         raise ValueError("DataFrame içinde 'genres' sütunu bulunamadı.")
@@ -32,13 +42,12 @@ def get_top_genre_counts(df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
         .nunique()
         .rename(columns={"app_id": "game_count"})
         .sort_values(["game_count", "genre"], ascending=[False, True])
-        .head(limit)
         .reset_index(drop=True)
     )
     return counts
 
 
-def create_genre_bar_chart(counts: pd.DataFrame, limit: int = 10) -> go.Figure:
+def create_genre_bar_chart(counts: pd.DataFrame) -> go.Figure:
     """Mehmet'in yatay bar grafiği tasarımını oluşturur."""
     chart_data = counts.sort_values(["game_count", "genre"], ascending=[True, False])
 
@@ -47,7 +56,7 @@ def create_genre_bar_chart(counts: pd.DataFrame, limit: int = 10) -> go.Figure:
         x="game_count",
         y="genre",
         orientation="h",
-        title=f"Top {limit} Game Genres on Steam",
+        title="Game Genre Distribution on Steam",
         labels={"game_count": "Number of Games", "genre": "Genre"},
         hover_name="genre",
         hover_data={"game_count": ":,", "genre": False},
@@ -136,8 +145,14 @@ def create_genre_tag_network(
     genre_counts: dict[str, int],
     tag_counts: dict[str, int],
     minimum_shared_games: int,
+    node_clusters: pd.DataFrame | None = None,
 ) -> go.Figure:
     """Render a compact force-directed Genre–Tag community graph."""
+    figure_title = (
+        "Genre–Tag Relationship Network by K-Means Cluster"
+        if node_clusters is not None
+        else "Genre–Tag Community Network"
+    )
     nodes, network_edges = _prepare_genre_tag_network(
         edges, genre_counts, tag_counts, minimum_shared_games
     )
@@ -153,7 +168,7 @@ def create_genre_tag_network(
         )
         figure.update_layout(
             title={
-                "text": "Genre–Tag Community Network",
+                "text": figure_title,
                 "font": {"color": "#f8fafc", "size": 20},
             },
             height=650,
@@ -162,6 +177,14 @@ def create_genre_tag_network(
             font={"color": "#f1f5f9"},
         )
         return figure
+    if node_clusters is not None:
+        cluster_by_node = node_clusters.set_index(["Node type", "Name"])["Cluster"]
+        nodes["kmeans_cluster"] = [
+            cluster_by_node.get((node_type, name), "Unassigned")
+            for node_type, name in nodes[["node_type", "name"]].itertuples(
+                index=False, name=None
+            )
+        ]
 
     line_x: list[float | None] = []
     line_y: list[float | None] = []
@@ -206,36 +229,78 @@ def create_genre_tag_network(
         )
     )
 
-    community_ids = sorted(nodes["community"].unique().tolist())
-    community_colors = px.colors.qualitative.Set1
-    for index, community_id in enumerate(community_ids):
-        community_nodes = nodes[nodes["community"] == community_id]
-        figure.add_trace(
-            go.Scatter(
-                x=community_nodes["x"],
-                y=community_nodes["y"],
-                mode="markers",
-                customdata=community_nodes[
-                    ["node_type", "degree", "game_count", "community", "name"]
-                ],
-                marker={
-                    "color": community_colors[index % len(community_colors)],
-                    "size": 22,
-                    "line": {"width": 0.6, "color": "#ffffff"},
-                },
-                hovertemplate=(
-                    "Name: %{customdata[4]}<br>Type: %{customdata[0]}"
-                    "<br>Connections: %{customdata[1]:,}"
-                    "<br>Games: %{customdata[2]:,}"
-                    "<br>Community: %{customdata[3]}<extra></extra>"
-                ),
-                name=f"Community {community_id}",
+    if node_clusters is not None:
+        cluster_names = sorted(nodes["kmeans_cluster"].unique().tolist())
+        cluster_colors = px.colors.qualitative.Plotly
+        for index, cluster_name in enumerate(cluster_names):
+            cluster_nodes = nodes[nodes["kmeans_cluster"] == cluster_name]
+            figure.add_trace(
+                go.Scatter(
+                    x=cluster_nodes["x"],
+                    y=cluster_nodes["y"],
+                    mode="markers",
+                    customdata=cluster_nodes[
+                        [
+                            "node_type",
+                            "degree",
+                            "weighted_degree",
+                            "game_count",
+                            "community",
+                            "name",
+                            "kmeans_cluster",
+                        ]
+                    ],
+                    marker={
+                        "color": cluster_colors[index % len(cluster_colors)],
+                        "symbol": [
+                            "circle" if node_type == "Genre" else "diamond"
+                            for node_type in cluster_nodes["node_type"]
+                        ],
+                        "size": 22,
+                        "line": {"width": 0.6, "color": "#ffffff"},
+                    },
+                    hovertemplate=(
+                        "Name: %{customdata[5]}<br>Type: %{customdata[0]}"
+                        "<br>K-Means cluster: %{customdata[6]}"
+                        "<br>Connections: %{customdata[1]:,}"
+                        "<br>Weighted degree: %{customdata[2]:,}"
+                        "<br>Games: %{customdata[3]:,}"
+                        "<br>Community: %{customdata[4]}<extra></extra>"
+                    ),
+                    name=cluster_name,
+                )
             )
-        )
+    else:
+        community_ids = sorted(nodes["community"].unique().tolist())
+        community_colors = px.colors.qualitative.Set1
+        for index, community_id in enumerate(community_ids):
+            community_nodes = nodes[nodes["community"] == community_id]
+            figure.add_trace(
+                go.Scatter(
+                    x=community_nodes["x"],
+                    y=community_nodes["y"],
+                    mode="markers",
+                    customdata=community_nodes[
+                        ["node_type", "degree", "game_count", "community", "name"]
+                    ],
+                    marker={
+                        "color": community_colors[index % len(community_colors)],
+                        "size": 22,
+                        "line": {"width": 0.6, "color": "#ffffff"},
+                    },
+                    hovertemplate=(
+                        "Name: %{customdata[4]}<br>Type: %{customdata[0]}"
+                        "<br>Connections: %{customdata[1]:,}"
+                        "<br>Games: %{customdata[2]:,}"
+                        "<br>Community: %{customdata[3]}<extra></extra>"
+                    ),
+                    name=f"Community {community_id}",
+                )
+            )
 
     figure.update_layout(
         title={
-            "text": "Genre–Tag Community Network",
+            "text": figure_title,
             "font": {"color": "#f8fafc", "size": 20},
         },
         height=650,
@@ -243,7 +308,10 @@ def create_genre_tag_network(
         dragmode="pan",
         showlegend=True,
         legend={
-            "title": {"text": "Communities", "font": {"color": "#e2e8f0"}},
+            "title": {
+                "text": "K-Means clusters" if node_clusters is not None else "Communities",
+                "font": {"color": "#e2e8f0"},
+            },
             "x": 1.02,
             "y": 1,
             "font": {"color": "#e2e8f0"},
@@ -349,6 +417,7 @@ def _prepare_genre_tag_network(
             "node_type": node[0],
             "name": node[1],
             "degree": graph.degree(node),
+            "weighted_degree": graph.degree(node, weight="weight"),
             "game_count": (
                 genre_counts[node[1]] if node[0] == "Genre" else tag_counts[node[1]]
             ),
@@ -515,18 +584,11 @@ def create_genre_review_box_plot(
 def render_genre_distribution(df: pd.DataFrame) -> None:
     st.subheader("1. Steam Game Genre Distribution")
 
-    top_n = st.slider(
-        "Select number of top genres to display:",
-        min_value=5,
-        max_value=25,
-        value=10,
-        step=5,
-        key="mehmet_genre_limit",
-    )
-
-    genre_counts = get_top_genre_counts(df, limit=top_n)
-    fig = create_genre_bar_chart(genre_counts, limit=top_n)
+    genre_counts = get_genre_counts(df)
+    fig = create_genre_bar_chart(genre_counts)
     st.plotly_chart(fig, use_container_width=True)
+    render_genre_distribution_analysis(df)
+    render_genre_distribution_random_forest(df)
 
 
 def render_genre_tag_network(df: pd.DataFrame) -> None:
@@ -543,17 +605,41 @@ def render_genre_tag_network(df: pd.DataFrame) -> None:
         value=min(50, max_common_games),
         key="mehmet_network_min_common",
     )
+    cluster_count = st.slider(
+        "Number of network node clusters",
+        min_value=2,
+        max_value=8,
+        value=4,
+        key="mehmet_network_cluster_count",
+    )
+    with st.spinner("Clustering Genre–Tag network nodes..."):
+        node_clusters = fit_genre_tag_node_clusters(
+            edges,
+            genre_counts,
+            tag_counts,
+            cluster_count,
+        )
     figure = create_genre_tag_network(
         edges,
         genre_counts,
         tag_counts,
         minimum_shared_games,
+        node_clusters.assignments,
     )
     st.plotly_chart(
         figure,
         use_container_width=True,
         config={"scrollZoom": True, "displayModeBar": True},
     )
+    st.caption(
+        "Node colors represent K-Means clusters; circles are Genre nodes and diamonds "
+        "are Tag nodes. Communities remain available in node hover details. "
+        f"The display retains the existing network limits of {NETWORK_NODE_LIMIT} nodes "
+        f"and {NETWORK_EDGE_LIMIT} edges; clustering uses all "
+        f"{node_clusters.genre_count + node_clusters.tag_count:,} network nodes."
+    )
+    render_genre_tag_node_cluster_results(node_clusters)
+    render_tag_prediction_analysis(df)
 
 
 def render_genre_review_box_plot(df: pd.DataFrame) -> None:
@@ -616,6 +702,8 @@ def render_genre_review_box_plot(df: pd.DataFrame) -> None:
         color_by_positive_ratio,
     )
     st.plotly_chart(figure, use_container_width=True)
+    render_review_profile_analysis(df)
+    render_review_score_random_forest(df)
 
 
 def render_mehmet(df: pd.DataFrame) -> None:

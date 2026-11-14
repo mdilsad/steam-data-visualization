@@ -2,7 +2,7 @@
 
 An interactive exploratory data visualization dashboard built with **Streamlit** and **Plotly** analyzing ~88k Steam games.
 
-The dashboard includes a **Machine Learning Analysis** section with K-Means clustering and Random Forest regression. Regression predicts the cleaned dataset's `estimated_owners` midpoint estimate (using a reproducible sample of up to 25,000 games), not verified sales or exact player counts.
+The **Mehmet** section integrates visualization-specific K-Means and Random Forest analyses with its three genre-focused visualizations.
 
 ---
 
