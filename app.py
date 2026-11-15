@@ -15,12 +15,19 @@ def main():
 
     st.title("🎮 Steam Games Data Analysis")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab_about, tab1, tab2, tab3, tab4 = st.tabs([
+        "About",
         "Mehmet",
         "Eda",
         "Demir",
         "Dataset Preview"
     ])
+
+    with tab_about:
+        st.subheader("What is this project about?")
+        st.markdown("This dashboard analyzes 2024 data about game genres, "
+                    "community tags, player counts, review scores, prices, "
+                    "developers and similar data of 88,000 games on Steam.")
 
     with tab1:
         render_mehmet(df)
