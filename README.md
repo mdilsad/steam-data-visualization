@@ -57,9 +57,11 @@ The app will open automatically in your browser at `http://localhost:8501`.
 
 ### 1. Mehmet (`src/mehmet.py` & `src/mehmet_ml.py`)
 
-* **Genre Distribution**: `doldurulacak`
-* **Genre - Tags Relationship Network**: `doldurulacak`
-* **Genre - Reviews Score Box Plot**: `doldurulacak`
+- **Genre Distribution**: Interactive bar chart displaying the distribution and number of Steam games across all 12 genres, enhanced with K-Means Genre Profile Clustering and Random Forest Multi-label Genre Prediction.
+
+- **Genre - Tags Relationship Network**: Interactive bipartite network graph illustrating co-occurrence relationships between game genres and tags, enhanced with K-Means Network Node Clustering and Random Forest Multi-label Tag Prediction.
+
+- **Genre - Review Score Box Plot**: Interactive box plot comparing Steam review score distributions across genres, including medians, quartiles, and outliers, enhanced with K-Means Review Profile Clustering and Random Forest Review Score Prediction.
 
 ### 2. Eda (`src/eda.py`)
 
