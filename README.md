@@ -90,5 +90,5 @@ The app will open automatically in your browser at `http://localhost:8501`.
   * **data_loader.py**: Loads parquet dataset and cache.
   * **demir.py**: Creates Demir's visualization methods: Treemap, Stacked Bar Chart and Parallel Coordinates.
   * **eda.py**: Creates Eda's three interactive visualizations: Violin Plot, Density Contour Plot and Line Chart. Includes filters for game genre, minimum review count and release year.
-* **mehmet.py**: Genre dağılımını, türler ile etiketler arasındaki ilişkileri ve türlere göre inceleme puanı dağılımını görselleştirir.
-* **mehmet_ml.py**: Steam oyun verilerine K-Means kümeleme ve Random Forest regresyonu uygular; oyunları benzer özelliklerine göre gruplar ve tahmini sahiplik aralıklarını analiz eder.
+* **mehmet.py**: Visualizes genre distribution, relationships between genres and tags, and review score distributions by genre.
+* **mehmet_ml.py**: Applies K-Means clustering and Random Forest regression to Steam game data, grouping games by similar attributes and analyzing estimated ownership ranges.
