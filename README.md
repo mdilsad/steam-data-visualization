@@ -63,9 +63,9 @@ The app will open automatically in your browser at `http://localhost:8501`.
 
 ### 2. Eda (`src/eda.py`)
 
-* **Positive Review Ratio by Game Genre**: `doldurulacak`
-* **Review Volume vs. Positive Rating**: `doldurulacak`
-* **Steam Game Releases by Year**: `doldurulacak`
+* **Positive Review Ratio by Game Genre**: Violin plot showing the distribution of positive review percentages across different game genres. It helps compare player satisfaction between genres.
+* **Review Volume vs. Positive Rating**: Density contour plot showing the relationship between the total number of reviews and positive review percentages. It helps identify where most games are concentrated.
+* **Steam Game Releases by Year**: Line chart showing the number of games released each year. It helps visualize changes in game releases over time.
 
 ### 3. Demir (`src/demir.py`)
 
@@ -87,6 +87,6 @@ The app will open automatically in your browser at `http://localhost:8501`.
 * **src/**
   * **data_loader.py**: Loads parquet dataset and cache.
   * **demir.py**: Creates Demir's visualization methods: Treemap, Stacked Bar Chart and Parallel Coordinates.
-  * **eda.py**: Creates Eda's visualization methods: `doldurulacak`
+  * **eda.py**: Creates Eda's three interactive visualizations: Violin Plot, Density Contour Plot and Line Chart. Includes filters for game genre, minimum review count and release year.
   * **mehmet.py**: Creates Mehmet's visualization methods: `doldurulacak`
   * **mehmet_ml.py**: `doldurulacak`
